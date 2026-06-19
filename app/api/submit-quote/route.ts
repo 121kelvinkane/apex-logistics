@@ -5,27 +5,30 @@ const prisma = new PrismaClient();
 
 export async function POST(request: Request) {
   try {
-    // Get the data sent from the Quote Form
     const body = await request.json();
+    
+    console.log("TRACKER: FORM SUBMITTED! Data received:", body);
+
     const { name, email, phone, origin, destination, message } = body;
 
-    // Save it to the database (Mapping the form names to the database names)
     const newQuote = await prisma.quote.create({
       data: {
         name,
         email,
         phone,
-        moveFrom: origin,      // Maps 'origin' to 'moveFrom'
-        moveTo: destination,   // Maps 'destination' to 'moveTo'
-        homeSize: message,     // Maps 'message' to 'homeSize'
-        moveDate: "Not specified", // Fills the required date field in the DB
+        moveFrom: origin,      
+        moveTo: destination,   
+        homeSize: message,     
+        moveDate: "Not specified", 
         status: 'Pending', 
       },
     });
 
+    console.log("TRACKER: SUCCESS! Saved to database:", newQuote);
+
     return NextResponse.json({ message: 'Quote saved successfully!', quote: newQuote }, { status: 201 });
   } catch (error) {
-    console.error('Error saving quote:', error);
+    console.error("TRACKER: DATABASE ERROR! Failed to save quote:", error);
     return NextResponse.json({ error: 'Failed to save quote' }, { status: 500 });
   }
 }
