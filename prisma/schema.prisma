@@ -1,4 +1,4 @@
-﻿generator client {
+generator client {
   provider = "prisma-client-js"
 }
 
@@ -7,13 +7,12 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// This is our Shipment Table
 model Shipment {
-  id          String @id @unique // This is the Tracking ID (e.g., APX-88392)
+  id          String @id @unique
   origin      String
   destination String
   status      String
-  progress    Int    // 0 to 100
-  currentLat  Float  // Latitude for the map
-  currentLng  Float  // Longitude for the map
+  progress    Int
+  currentLat  Float
+  currentLng  Float
 }
