@@ -1,6 +1,6 @@
-﻿"use client";
-import { useState, useEffect } from 'react';
-import { MapPin, CheckCircle, ArrowLeft, AlertCircle } from 'lucide-react';
+"use client";
+import { useState, useEffect, useRef } from 'react';
+import { MapPin, CheckCircle, ArrowLeft, AlertCircle, Clock } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import Header from '../../src/components/Header';
 import Footer from '../../src/components/Footer';
@@ -10,6 +10,39 @@ const Map = dynamic(() => import('../../src/components/Map'), {
   loading: () => <div className="h-full w-full bg-slate-100 rounded-lg flex items-center justify-center text-gray-500">Loading Satellite Map...</div> 
 });
 
+function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+function calculateBearing(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const y = Math.sin(dLon) * Math.cos(lat2 * Math.PI / 180);
+  const x = Math.cos(lat1 * Math.PI / 180) * Math.sin(lat2 * Math.PI / 180) -
+            Math.sin(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.cos(dLon);
+  let bearing = Math.atan2(y, x) * 180 / Math.PI;
+  return (bearing + 360) % 360;
+}
+
+async function geocodeCity(cityName: string): Promise<[number, number] | null> {
+  try {
+    const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(cityName)}&limit=1`);
+    const data = await response.json();
+    if (data && data.length > 0) {
+      return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+    }
+  } catch (error) {
+    console.error('Geocoding error:', error);
+  }
+  return null;
+}
+
 export default function TrackingPage() {
   const [trackingId, setTrackingId] = useState('');
   const [isTracking, setIsTracking] = useState(false);
@@ -17,25 +50,54 @@ export default function TrackingPage() {
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
+  const [shipmentOrigin, setShipmentOrigin] = useState('');
+  const [shipmentDestination, setShipmentDestination] = useState('');
+  const [timeRemaining, setTimeRemaining] = useState('');
+  const [originCoords, setOriginCoords] = useState<[number, number]>([40.7128, -74.0060]);
+  const [destCoords, setDestCoords] = useState<[number, number]>([51.5074, -0.1278]);
+  const [totalDistance, setTotalDistance] = useState(0);
+  const [animationDuration, setAnimationDuration] = useState(800);
+  const [bearing, setBearing] = useState(0);
+  
+  // NEW: Ref for the map container to scroll to it
+  const mapContainerRef = useRef<HTMLDivElement>(null);
 
-  // Animation engine (animates from current DB progress to 100%)
   useEffect(() => {
     let interval: NodeJS.Timeout;
     if (isTracking && progress < 100) {
       interval = setInterval(() => {
         setProgress(prev => {
-          const next = prev + 1; 
-          if (next < 15) setStatus('Departed Origin Facility');
-          else if (next < 45) setStatus('In Transit - Ocean/Air');
-          else if (next < 75) setStatus('Arrived at Destination Hub');
-          else if (next < 99) setStatus('Out for Delivery');
+          const step = 50 / animationDuration;
+          const next = Math.min(prev + step, 100); 
+          
+          const intProgress = Math.floor(next);
+          if (intProgress < 15) setStatus('Departed Origin Facility');
+          else if (intProgress < 45) setStatus('In Transit - Ocean/Air');
+          else if (intProgress < 75) setStatus('Arrived at Destination Hub');
+          else if (intProgress < 99) setStatus('Out for Delivery');
           else setStatus('Delivered!');
+          
+          const secondsLeft = ((100 - next) * animationDuration) / 1000;
+          if (secondsLeft > 3600) {
+            const hours = Math.floor(secondsLeft / 3600);
+            const mins = Math.floor((secondsLeft % 3600) / 60);
+            setTimeRemaining(`${hours}h ${mins}m`);
+          } else if (secondsLeft > 60) {
+            const mins = Math.floor(secondsLeft / 60);
+            const secs = Math.floor(secondsLeft % 60);
+            setTimeRemaining(`${mins}m ${secs}s`);
+          } else {
+            setTimeRemaining(`${Math.floor(secondsLeft)}s`);
+          }
+          
           return next;
         });
-      }, 300);
+      }, 50);
+    } else if (progress >= 100) {
+      setTimeRemaining('Arrived!');
     }
     return () => clearInterval(interval);
-  }, [isTracking, progress]);
+  }, [isTracking, progress, animationDuration]);
 
   const handleTrack = async () => {
     setError('');
@@ -44,7 +106,6 @@ export default function TrackingPage() {
     setIsLoading(true);
     
     try {
-      // CALL THE PRISMA API ROUTE
       const response = await fetch('/api/track', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -52,17 +113,49 @@ export default function TrackingPage() {
       });
 
       if (response.status === 404) {
-        setError(`Tracking ID "${trackingId}" not found. Please check your documents.`);
+        setError('Tracking ID "' + trackingId + '" not found. Please check your documents.');
         setIsLoading(false);
         return;
       }
 
       const data = await response.json();
+      setShipmentOrigin(data.origin);
+      setShipmentDestination(data.destination);
       
-      // Start the animation from the database's current progress
-      setProgress(data.progress);
-      setStatus(data.status);
+      const [originCoordsResult, destCoordsResult] = await Promise.all([
+        geocodeCity(data.origin),
+        geocodeCity(data.destination)
+      ]);
+      
+      if (!originCoordsResult || !destCoordsResult) {
+        setError('Could not find coordinates for one or both cities. Please check the city names.');
+        setIsLoading(false);
+        return;
+      }
+      
+      setOriginCoords(originCoordsResult);
+      setDestCoords(destCoordsResult);
+      
+      const distance = calculateDistance(originCoordsResult[0], originCoordsResult[1], destCoordsResult[0], destCoordsResult[1]);
+      setTotalDistance(distance);
+      
+      const baseDuration = 800;
+      const baseDistance = 1000;
+      const calculatedDuration = Math.max(200, Math.min(2000, (distance / baseDistance) * baseDuration));
+      setAnimationDuration(calculatedDuration);
+      
+      const routeBearing = calculateBearing(originCoordsResult[0], originCoordsResult[1], destCoordsResult[0], destCoordsResult[1]);
+      setBearing(routeBearing);
+      
+      setProgress(0);
+      setStatus('Processing...');
       setIsTracking(true);
+      
+      // NEW: Smoothly scroll to the map when tracking starts
+      setTimeout(() => {
+        mapContainerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 300);
+      
     } catch (err) {
       setError('Server error. Please try again.');
     } finally {
@@ -72,6 +165,9 @@ export default function TrackingPage() {
 
   const handleReset = () => {
     setIsTracking(false); setProgress(0); setStatus(''); setTrackingId(''); setError('');
+    setShipmentOrigin(''); setShipmentDestination(''); setTimeRemaining('');
+    setOriginCoords([40.7128, -74.0060]); setDestCoords([51.5074, -0.1278]);
+    setTotalDistance(0); setAnimationDuration(800); setBearing(0);
   };
 
   return (
@@ -82,14 +178,14 @@ export default function TrackingPage() {
           <ArrowLeft size={18} /> Back to Home
         </a>
         <h1 className="text-3xl md:text-4xl font-bold text-[#00234B] mb-2">Global Shipment Tracking</h1>
-        <p className="text-gray-500 mb-8">Enter your tracking number to view real-time database location and status.</p>
+        <p className="text-gray-500 mb-8">Enter your tracking number to view real-time satellite location and status.</p>
 
         <div className="bg-white p-6 rounded-xl shadow-md border border-gray-100 mb-8 max-w-3xl">
           <div className="flex flex-col sm:flex-row gap-3">
-            <input type="text" value={trackingId} onChange={(e) => { setTrackingId(e.target.value); setError(''); }} placeholder="Try: APX-88392, APX-12345, or APX-99999" disabled={isTracking || isLoading} className="flex-1 border border-gray-300 rounded-md px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#FF8C00] focus:border-transparent disabled:bg-gray-100" />
+            <input type="text" value={trackingId} onChange={(e) => { setTrackingId(e.target.value); setError(''); }} placeholder="Enter any tracking ID from database" disabled={isTracking || isLoading} className="flex-1 border border-gray-300 rounded-md px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#FF8C00] focus:border-transparent disabled:bg-gray-100" />
             {!isTracking ? (
               <button onClick={handleTrack} disabled={isLoading} className="bg-[#00234B] text-white px-8 py-3 rounded-md font-semibold hover:bg-[#003366] transition-colors flex items-center justify-center gap-2 whitespace-nowrap disabled:opacity-50">
-                {isLoading ? 'Searching DB...' : <><MapPin size={18} /> Track Parcel</>}
+                {isLoading ? 'Locating...' : <><MapPin size={18} /> Track Parcel</>}
               </button>
             ) : (
               <button onClick={handleReset} className="bg-gray-200 text-gray-700 px-8 py-3 rounded-md font-semibold hover:bg-gray-300 transition-colors whitespace-nowrap">Track Another</button>
@@ -106,26 +202,48 @@ export default function TrackingPage() {
             <div className="mt-6 space-y-3 animate-in fade-in slide-in-from-bottom-4 duration-500">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-semibold text-gray-700">Current Status:</span>
-                <span className={`text-sm font-bold ${progress === 100 ? 'text-green-600' : 'text-[#FF8C00]'}`}>{status}</span>
+                <span className={`text-sm font-bold ${progress >= 100 ? 'text-green-600' : 'text-[#FF8C00]'}`}>{status}</span>
               </div>
+              
+              <div className="flex items-center justify-between bg-blue-50 p-3 rounded-lg border border-blue-200">
+                <span className="text-sm font-semibold text-[#00234B] flex items-center gap-2">
+                  <Clock size={16} /> Estimated Time Remaining:
+                </span>
+                <span className={`text-lg font-bold ${progress >= 100 ? 'text-green-600' : 'text-[#FF8C00]'}`}>
+                  {timeRemaining}
+                </span>
+              </div>
+
+              {totalDistance > 0 && (
+                <div className="flex items-center justify-between bg-gray-50 p-3 rounded-lg border border-gray-200">
+                  <span className="text-sm font-semibold text-gray-700">Total Distance:</span>
+                  <span className="text-sm font-bold text-[#00234B]">
+                    {totalDistance.toFixed(0)} km ({(totalDistance * 0.621371).toFixed(0)} miles)
+                  </span>
+                </div>
+              )}
+              
               <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
-                <div className={`h-2.5 rounded-full transition-all duration-300 ease-linear ${progress === 100 ? 'bg-green-500' : 'bg-[#FF8C00]'}`} style={{ width: `${progress}%` }}></div>
+                <div className={`h-2.5 rounded-full transition-all ease-linear ${progress >= 100 ? 'bg-green-500' : 'bg-[#FF8C00]'}`} style={{ width: `${progress}%` }}></div>
               </div>
               <div className="flex items-center justify-between text-xs text-gray-500 font-medium">
-                <span>Origin</span><span>{progress}% Complete</span><span>Destination</span>
+                <span>{shipmentOrigin}</span>
+                <span>{Math.floor(progress)}% Complete</span>
+                <span>{shipmentDestination}</span>
               </div>
-              {progress === 100 && (
+              {progress >= 100 && (
                 <div className="flex items-center gap-2 text-green-600 font-bold pt-2 border-t border-gray-200 mt-2"><CheckCircle size={18} /> Package Delivered Successfully!</div>
               )}
             </div>
           )}
         </div>
 
-        <div className="relative overflow-hidden border-4 border-white rounded-2xl shadow-2xl h-[60vh] min-h-[400px]">
-          <Map isTracking={isTracking} progress={progress} />
+        {/* NEW: Added ref to this div so we can scroll to it */}
+        <div ref={mapContainerRef} className="relative overflow-hidden border-4 border-white rounded-2xl shadow-2xl h-[60vh] min-h-[400px]">
+          <Map isTracking={isTracking} progress={progress} originCoords={originCoords} destCoords={destCoords} origin={shipmentOrigin} destination={shipmentDestination} bearing={bearing} />
           <div className="absolute bottom-4 right-4 bg-white/95 backdrop-blur px-4 py-2 rounded-lg text-sm font-semibold text-[#00234B] shadow-lg flex items-center gap-2 border border-gray-200">
             <span className={`w-2.5 h-2.5 rounded-full ${isTracking ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></span> 
-            {isTracking ? 'Live Database Tracking Active' : 'Enter ID to Track'}
+            {isTracking ? 'Live Global Tracking Active' : 'Enter ID to Track'}
           </div>
         </div>
       </div>
