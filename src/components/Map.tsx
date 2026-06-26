@@ -30,7 +30,6 @@ function MapController({ isTracking, currentPos, originCoords, progress }: { isT
 
   useEffect(() => {
     if (isTracking && progress === 0) {
-      // ZOOM LEVEL 11 - Much closer, can see streets and terrain clearly
       map.flyTo(originCoords, 11, { duration: 2 });
     }
   }, [isTracking, progress, originCoords, map]);
@@ -56,8 +55,10 @@ interface MapProps {
 
 export default function Map({ isTracking, progress, originCoords, destCoords, origin, destination, bearing }: MapProps) {
   const route: [number, number][] = [originCoords, destCoords];
-  const centerLat = (originCoords[0] + destCoords[0]) / 2;
-  const centerLng = (originCoords[1] + destCoords[1]) / 2;
+  
+  // Default global view when not tracking
+  const centerLat = isTracking ? (originCoords[0] + destCoords[0]) / 2 : 20;
+  const centerLng = isTracking ? (originCoords[1] + destCoords[1]) / 2 : 0;
 
   function getPointOnRoute(prog: number): [number, number] {
     const t = prog / 100;
@@ -70,18 +71,21 @@ export default function Map({ isTracking, progress, originCoords, destCoords, or
   const truckIcon = getTruckIcon(bearing);
 
   return (
-    <MapContainer center={[centerLat, centerLng]} zoom={3} className="h-full w-full rounded-lg z-0" scrollWheelZoom={true}>
+    <MapContainer center={[centerLat, centerLng]} zoom={isTracking ? 3 : 2} className="h-full w-full rounded-lg z-0" scrollWheelZoom={true}>
       <TileLayer attribution='Tiles &copy; Esri' url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" />
       <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" />
       
       <MapController isTracking={isTracking} currentPos={currentPos} originCoords={originCoords} progress={progress} />
       
-      <Marker position={originCoords} icon={pinIcon}><Popup>Origin: {origin}</Popup></Marker>
-      <Marker position={destCoords} icon={pinIcon}><Popup>Destination: {destination}</Popup></Marker>
-      
-      <Polyline pathOptions={{ color: '#FF8C00', dashArray: '5, 10', weight: 3 }} positions={route} />
-      
-      {isTracking && <Marker position={currentPos} icon={truckIcon}><Popup>Live Shipment - {Math.floor(progress)}% Complete</Popup></Marker>}
+      {/* ONLY SHOW ROUTE, PINS, AND TRUCK WHEN TRACKING IS ACTIVE */}
+      {isTracking && (
+        <>
+          <Marker position={originCoords} icon={pinIcon}><Popup>Origin: {origin}</Popup></Marker>
+          <Marker position={destCoords} icon={pinIcon}><Popup>Destination: {destination}</Popup></Marker>
+          <Polyline pathOptions={{ color: '#FF8C00', dashArray: '5, 10', weight: 3 }} positions={route} />
+          <Marker position={currentPos} icon={truckIcon}><Popup>Live Shipment - {Math.floor(progress)}% Complete</Popup></Marker>
+        </>
+      )}
     </MapContainer>
   );
 }

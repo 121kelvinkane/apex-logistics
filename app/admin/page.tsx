@@ -1,129 +1,190 @@
-﻿"use client";
-
+"use client";
 import { useState, useEffect } from 'react';
-import { 
-  Truck, Package, Users, DollarSign, TrendingUp, 
-  LayoutDashboard, Settings, LogOut, Bell, 
-  ArrowUpRight, ArrowDownRight 
-} from 'lucide-react';
+import { Package, Truck, CheckCircle, AlertCircle, Plus, RefreshCw, ArrowLeft } from 'lucide-react';
+import Link from 'next/link';
+
+interface Shipment {
+  id: string;
+  origin: string;
+  destination: string;
+  status: string;
+  progress: number;
+}
 
 export default function AdminDashboard() {
-  const [recentQuotes, setRecentQuotes] = useState<any[]>([]);
+  const [shipments, setShipments] = useState<Shipment[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  
+  // Form states
+  const [newId, setNewId] = useState('');
+  const [newOrigin, setNewOrigin] = useState('');
+  const [newDest, setNewDest] = useState('');
+
+  const fetchShipments = async () => {
+    setIsLoading(true);
+    const res = await fetch('/api/shipments');
+    const data = await res.json();
+    setShipments(data);
+    setIsLoading(false);
+  };
 
   useEffect(() => {
-    fetch('/api/quotes')
-      .then(res => res.json())
-      .then(data => {
-        if (Array.isArray(data)) {
-          setRecentQuotes(data);
-        } else {
-          setRecentQuotes([]);
-        }
-      })
-      .catch(err => {
-        console.error("Failed to fetch quotes:", err);
-        setRecentQuotes([]);
-      });
+    fetchShipments();
   }, []);
 
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newId || !newOrigin || !newDest) return;
+
+    await fetch('/api/shipments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: newId, origin: newOrigin, destination: newDest }),
+    });
+
+    setNewId(''); setNewOrigin(''); setNewDest('');
+    setShowCreateForm(false);
+    fetchShipments();
+  };
+
+  const handleUpdateProgress = async (id: string, newProgress: number) => {
+    let newStatus = 'Departed Origin Facility';
+    if (newProgress >= 100) newStatus = 'Delivered!';
+    else if (newProgress >= 75) newStatus = 'Out for Delivery';
+    else if (newProgress >= 45) newStatus = 'In Transit - Ocean/Air';
+    else if (newProgress >= 15) newStatus = 'Arrived at Destination Hub';
+
+    await fetch('/api/shipments', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, progress: newProgress, status: newStatus }),
+    });
+    fetchShipments();
+  };
+
+  // Calculate Stats
+  const totalShipments = shipments.length;
+  const inTransit = shipments.filter(s => s.progress > 0 && s.progress < 100).length;
+  const delivered = shipments.filter(s => s.progress >= 100).length;
+
   return (
-    <div className="flex h-screen bg-gray-100 font-sans">
+    <main className="font-sans bg-gray-50 min-h-screen flex">
       {/* Sidebar */}
-      <aside className="w-64 bg-gray-900 text-white flex flex-col shadow-xl">
-        <div className="p-6 text-2xl font-bold border-b border-gray-700">Apex Admin</div>
-        <nav className="flex-1 p-4 space-y-2">
-          <a href="/admin" className="flex items-center gap-3 px-4 py-2 bg-blue-600 rounded-lg font-medium">
-            <LayoutDashboard size={20} /> Dashboard
-          </a>
-          <a href="/admin/fleet" className="flex items-center gap-3 px-4 py-2 hover:bg-gray-800 rounded-lg transition-colors">
-            <Truck size={20} /> Fleet
-          </a>
-          <a href="/admin/bookings" className="flex items-center gap-3 px-4 py-2 hover:bg-gray-800 rounded-lg transition-colors">
-            <Package size={20} /> Bookings
-          </a>
-          <a href="/admin/customers" className="flex items-center gap-3 px-4 py-2 hover:bg-gray-800 rounded-lg transition-colors">
-            <Users size={20} /> Customers
-          </a>
-          <a href="/admin/settings" className="flex items-center gap-3 px-4 py-2 hover:bg-gray-800 rounded-lg transition-colors">
-            <Settings size={20} /> Settings
-          </a>
+      <aside className="w-64 bg-[#00234B] text-white p-6 hidden md:flex flex-col">
+        <h2 className="text-2xl font-bold mb-8 flex items-center gap-2">
+          <Package className="text-[#FF8C00]" /> APEX
+        </h2>
+        <nav className="flex-1 space-y-2">
+          <a href="/admin" className="block py-3 px-4 bg-[#FF8C00] rounded-lg font-semibold">Dashboard</a>
+          <a href="/" className="block py-3 px-4 hover:bg-white/10 rounded-lg transition-colors">View Website</a>
+          <a href="/tracking" className="block py-3 px-4 hover:bg-white/10 rounded-lg transition-colors">Tracking Page</a>
         </nav>
-        <div className="p-4 border-t border-gray-700">
-          <a href="/" className="flex items-center gap-3 px-4 py-2 hover:bg-gray-800 rounded-lg text-gray-400 hover:text-white transition-colors">
-            <LogOut size={20} /> Back to Site
-          </a>
-        </div>
+        <Link href="/" className="flex items-center gap-2 text-sm text-gray-400 hover:text-white mt-8">
+          <ArrowLeft size={16} /> Back to Home
+        </Link>
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col overflow-hidden">
-        <header className="bg-white shadow-sm p-4 flex items-center justify-between z-10">
-          <h1 className="text-2xl font-semibold text-gray-800">Dashboard Overview</h1>
-          <div className="w-9 h-9 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold">A</div>
-        </header>
-
-        <div className="flex-1 overflow-y-auto p-6 bg-gray-50">
-          {/* Stat Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-              <h3 className="text-gray-500 text-sm">Total Quotes</h3>
-              <p className="text-2xl font-bold text-gray-900 mt-1">{recentQuotes.length}</p>
-            </div>
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-              <h3 className="text-gray-500 text-sm">Pending</h3>
-              <p className="text-2xl font-bold text-yellow-600 mt-1">
-                {recentQuotes.filter(q => q.status === 'Pending').length}
-              </p>
-            </div>
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-              <h3 className="text-gray-500 text-sm">In Progress</h3>
-              <p className="text-2xl font-bold text-blue-600 mt-1">
-                {recentQuotes.filter(q => q.status === 'In Progress').length}
-              </p>
-            </div>
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-              <h3 className="text-gray-500 text-sm">Completed</h3>
-              <p className="text-2xl font-bold text-green-600 mt-1">
-                {recentQuotes.filter(q => q.status === 'Completed').length}
-              </p>
-            </div>
+      <div className="flex-1 p-6 md:p-10">
+        <div className="flex justify-between items-center mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-[#00234B]">Admin Dashboard</h1>
+            <p className="text-gray-500">Manage all global shipments and tracking data.</p>
           </div>
+          <div className="flex gap-3">
+            <button onClick={fetchShipments} className="p-3 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 text-[#00234B]">
+              <RefreshCw size={20} className={isLoading ? 'animate-spin' : ''} />
+            </button>
+            <button onClick={() => setShowCreateForm(!showCreateForm)} className="bg-[#FF8C00] text-white px-5 py-3 rounded-lg font-semibold hover:bg-[#E67E00] flex items-center gap-2">
+              <Plus size={20} /> New Shipment
+            </button>
+          </div>
+        </div>
 
-          {/* Recent Activity Table */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <h2 className="text-lg font-semibold text-gray-800 mb-6 flex items-center gap-2">
-              <TrendingUp className="text-blue-600" size={20} /> Real Customer Quotes
-            </h2>
-            
-            {recentQuotes.length === 0 ? (
-              <p className="text-gray-500 text-center py-8">No quotes yet. Submit one from the main website!</p>
-            ) : (
-              <div className="space-y-4">
-                {recentQuotes.map((quote) => (
-                  <div key={quote.id} className="flex items-center justify-between p-4 hover:bg-gray-50 rounded-lg border border-gray-100 transition-colors">
-                    <div>
-                      <p className="font-medium text-gray-900">{quote.name}</p>
-                      <p className="text-sm text-gray-500 mt-1">
-                        Moving from <span className="font-semibold">{quote.moveFrom}</span> to <span className="font-semibold">{quote.moveTo}</span>
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <span className={`px-3 py-1 text-xs font-medium rounded-full ${
-                        quote.status === 'Completed' ? 'bg-green-100 text-green-700' :
-                        quote.status === 'In Progress' ? 'bg-blue-100 text-blue-700' :
-                        'bg-yellow-100 text-yellow-700'
-                      }`}>
-                        {quote.status}
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4">
+            <div className="p-3 bg-blue-100 text-blue-600 rounded-lg"><Package size={24} /></div>
+            <div><p className="text-sm text-gray-500">Total Shipments</p><p className="text-3xl font-bold text-[#00234B]">{totalShipments}</p></div>
+          </div>
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4">
+            <div className="p-3 bg-orange-100 text-[#FF8C00] rounded-lg"><Truck size={24} /></div>
+            <div><p className="text-sm text-gray-500">In Transit</p><p className="text-3xl font-bold text-[#00234B]">{inTransit}</p></div>
+          </div>
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4">
+            <div className="p-3 bg-green-100 text-green-600 rounded-lg"><CheckCircle size={24} /></div>
+            <div><p className="text-sm text-gray-500">Delivered</p><p className="text-3xl font-bold text-[#00234B]">{delivered}</p></div>
+          </div>
+        </div>
+
+        {/* Create Form (Toggleable) */}
+        {showCreateForm && (
+          <form onSubmit={handleCreate} className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 mb-8 grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Tracking ID</label>
+              <input type="text" value={newId} onChange={e => setNewId(e.target.value)} placeholder="APX-12345" className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-[#FF8C00]" required />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Origin City</label>
+              <input type="text" value={newOrigin} onChange={e => setNewOrigin(e.target.value)} placeholder="Tokyo, Japan" className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-[#FF8C00]" required />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Destination City</label>
+              <input type="text" value={newDest} onChange={e => setNewDest(e.target.value)} placeholder="Paris, France" className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-[#FF8C00]" required />
+            </div>
+            <button type="submit" className="bg-[#00234B] text-white px-6 py-2 rounded-md font-semibold hover:bg-[#003366]">Create</button>
+          </form>
+        )}
+
+        {/* Shipments Table */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="p-6 border-b border-gray-100">
+            <h3 className="text-lg font-bold text-[#00234B]">Active Shipments</h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead className="bg-gray-50 text-gray-600 text-sm uppercase">
+                <tr>
+                  <th className="p-4">Tracking ID</th>
+                  <th className="p-4">Route</th>
+                  <th className="p-4">Status</th>
+                  <th className="p-4">Progress</th>
+                  <th className="p-4">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {shipments.map((s) => (
+                  <tr key={s.id} className="hover:bg-gray-50">
+                    <td className="p-4 font-mono font-bold text-[#00234B]">{s.id}</td>
+                    <td className="p-4 text-sm text-gray-600">{s.origin} → {s.destination}</td>
+                    <td className="p-4">
+                      <span className={`px-3 py-1 rounded-full text-xs font-bold ${s.progress >= 100 ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-[#FF8C00]'}`}>
+                        {s.status}
                       </span>
-                    </div>
-                  </div>
+                    </td>
+                    <td className="p-4 w-48">
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 bg-gray-200 rounded-full h-2">
+                          <div className="bg-[#FF8C00] h-2 rounded-full" style={{ width: `${s.progress}%` }}></div>
+                        </div>
+                        <span className="text-xs font-bold text-gray-500 w-8">{s.progress}%</span>
+                      </div>
+                    </td>
+                    <td className="p-4 flex gap-2">
+                      <button onClick={() => handleUpdateProgress(s.id, Math.min(s.progress + 25, 100))} className="text-xs bg-blue-50 text-blue-600 px-3 py-1 rounded hover:bg-blue-100 font-semibold">+25%</button>
+                      <button onClick={() => handleUpdateProgress(s.id, 100)} className="text-xs bg-green-50 text-green-600 px-3 py-1 rounded hover:bg-green-100 font-semibold">Deliver</button>
+                    </td>
+                  </tr>
                 ))}
-              </div>
+              </tbody>
+            </table>
+            {shipments.length === 0 && !isLoading && (
+              <div className="p-10 text-center text-gray-500">No shipments found. Click "New Shipment" to create one.</div>
             )}
           </div>
         </div>
-      </main>
-    </div>
+      </div>
+    </main>
   );
 }
-

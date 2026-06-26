@@ -53,13 +53,14 @@ export default function TrackingPage() {
   const [shipmentOrigin, setShipmentOrigin] = useState('');
   const [shipmentDestination, setShipmentDestination] = useState('');
   const [timeRemaining, setTimeRemaining] = useState('');
-  const [originCoords, setOriginCoords] = useState<[number, number]>([40.7128, -74.0060]);
-  const [destCoords, setDestCoords] = useState<[number, number]>([51.5074, -0.1278]);
+  
+  // Default to [0,0] (middle of the ocean) so no default route shows
+  const [originCoords, setOriginCoords] = useState<[number, number]>([0, 0]);
+  const [destCoords, setDestCoords] = useState<[number, number]>([0, 0]);
+  
   const [totalDistance, setTotalDistance] = useState(0);
   const [animationDuration, setAnimationDuration] = useState(800);
   const [bearing, setBearing] = useState(0);
-  
-  // NEW: Ref for the map container to scroll to it
   const mapContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -151,7 +152,6 @@ export default function TrackingPage() {
       setStatus('Processing...');
       setIsTracking(true);
       
-      // NEW: Smoothly scroll to the map when tracking starts
       setTimeout(() => {
         mapContainerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }, 300);
@@ -166,7 +166,7 @@ export default function TrackingPage() {
   const handleReset = () => {
     setIsTracking(false); setProgress(0); setStatus(''); setTrackingId(''); setError('');
     setShipmentOrigin(''); setShipmentDestination(''); setTimeRemaining('');
-    setOriginCoords([40.7128, -74.0060]); setDestCoords([51.5074, -0.1278]);
+    setOriginCoords([0, 0]); setDestCoords([0, 0]); // Reset to blank map
     setTotalDistance(0); setAnimationDuration(800); setBearing(0);
   };
 
@@ -238,7 +238,6 @@ export default function TrackingPage() {
           )}
         </div>
 
-        {/* NEW: Added ref to this div so we can scroll to it */}
         <div ref={mapContainerRef} className="relative overflow-hidden border-4 border-white rounded-2xl shadow-2xl h-[60vh] min-h-[400px]">
           <Map isTracking={isTracking} progress={progress} originCoords={originCoords} destCoords={destCoords} origin={shipmentOrigin} destination={shipmentDestination} bearing={bearing} />
           <div className="absolute bottom-4 right-4 bg-white/95 backdrop-blur px-4 py-2 rounded-lg text-sm font-semibold text-[#00234B] shadow-lg flex items-center gap-2 border border-gray-200">
