@@ -35,7 +35,7 @@ export default function Testimonials() {
               </div>
             </div>
           ))}
-        </div
+        </div>
       </div>
     </section>
   );

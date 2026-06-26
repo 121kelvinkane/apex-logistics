@@ -1,4 +1,4 @@
-export default function Hero() {
+﻿export default function Hero() {
   return (
     <section id="home" className="relative h-screen min-h-[600px] flex items-center justify-center">
       <div className="absolute inset-0 bg-cover bg-center z-0" style={{ backgroundImage: "url('https://images.unsplash.com/photo-1578575437130-527eed3abbec?auto=format&fit=crop&q=80&w=2070')" }}>
@@ -13,7 +13,7 @@ export default function Hero() {
         </p>
         <div className="flex flex-col sm:flex-row gap-4">
           <a href="#quote" className="bg-[#FF8C00] text-white px-8 py-4 rounded-md font-bold text-lg hover:bg-[#E67E00] hover:scale-105 transition-all duration-300 shadow-lg shadow-[#FF8C00]/30 text-center">GET A QUICK QUOTE</a>
-          <a href="#tracking" className="bg-transparent border-2 border-white text-white px-8 py-4 rounded-md font-bold text-lg hover:bg-white hover:text-[#00234B] transition-all duration-300 text-center">TRACK SHIPMENT</a>
+          <a href="/tracking" target="_blank" rel="noopener noreferrer" className="bg-transparent border-2 border-white text-white px-8 py-4 rounded-md font-bold text-lg hover:bg-white hover:text-[#00234B] transition-all duration-300 text-center">TRACK SHIPMENT</a>
         </div>
       </div>
     </section>
