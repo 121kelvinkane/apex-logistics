@@ -2,7 +2,7 @@
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 const pinIcon = new L.Icon({
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
@@ -25,20 +25,39 @@ const getTruckIcon = (rotation: number) => new L.DivIcon({
   iconAnchor: [20, 20],
 });
 
-function MapController({ isTracking, currentPos, originCoords, progress }: { isTracking: boolean; currentPos: [number, number]; originCoords: [number, number]; progress: number }) {
+function MapController({ isTracking, currentPos, originCoords, progress, recenterKey }: { isTracking: boolean; currentPos: [number, number]; originCoords: [number, number]; progress: number; recenterKey: number }) {
   const map = useMap();
+  const [userDragging, setUserDragging] = useState(false);
 
+  // Initial zoom when tracking starts
   useEffect(() => {
     if (isTracking && progress === 0) {
       map.flyTo(originCoords, 11, { duration: 2 });
+      setUserDragging(false);
     }
   }, [isTracking, progress, originCoords, map]);
 
+  // Recenter when the button is clicked
   useEffect(() => {
-    if (isTracking && progress > 0) {
+    if (recenterKey > 0) {
+      map.flyTo(currentPos, map.getZoom(), { duration: 1 });
+      setUserDragging(false);
+    }
+  }, [recenterKey, currentPos, map]);
+
+  // Detect when user manually drags the map
+  useEffect(() => {
+    const onDragStart = () => setUserDragging(true);
+    map.on('dragstart', onDragStart);
+    return () => { map.off('dragstart', onDragStart); };
+  }, [map]);
+
+  // Auto-pan ONLY if the user isn't currently dragging the map
+  useEffect(() => {
+    if (isTracking && progress > 0 && !userDragging) {
       map.panTo(currentPos, { animate: true, duration: 0.05, noMoveStart: true });
     }
-  }, [currentPos, isTracking, map]);
+  }, [currentPos, isTracking, map, userDragging]);
 
   return null;
 }
@@ -51,12 +70,11 @@ interface MapProps {
   origin: string;
   destination: string;
   bearing: number;
+  recenterKey: number;
 }
 
-export default function Map({ isTracking, progress, originCoords, destCoords, origin, destination, bearing }: MapProps) {
+export default function Map({ isTracking, progress, originCoords, destCoords, origin, destination, bearing, recenterKey }: MapProps) {
   const route: [number, number][] = [originCoords, destCoords];
-  
-  // Default global view when not tracking
   const centerLat = isTracking ? (originCoords[0] + destCoords[0]) / 2 : 20;
   const centerLng = isTracking ? (originCoords[1] + destCoords[1]) / 2 : 0;
 
@@ -75,9 +93,8 @@ export default function Map({ isTracking, progress, originCoords, destCoords, or
       <TileLayer attribution='Tiles &copy; Esri' url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" />
       <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" />
       
-      <MapController isTracking={isTracking} currentPos={currentPos} originCoords={originCoords} progress={progress} />
+      <MapController isTracking={isTracking} currentPos={currentPos} originCoords={originCoords} progress={progress} recenterKey={recenterKey} />
       
-      {/* ONLY SHOW ROUTE, PINS, AND TRUCK WHEN TRACKING IS ACTIVE */}
       {isTracking && (
         <>
           <Marker position={originCoords} icon={pinIcon}><Popup>Origin: {origin}</Popup></Marker>

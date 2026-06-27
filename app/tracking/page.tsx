@@ -1,9 +1,10 @@
 "use client";
 import { useState, useEffect, useRef } from 'react';
-import { MapPin, CheckCircle, ArrowLeft, AlertCircle, Clock } from 'lucide-react';
+import { MapPin, CheckCircle, ArrowLeft, Clock } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import Header from '../../src/components/Header';
 import Footer from '../../src/components/Footer';
+import toast from 'react-hot-toast';
 
 const Map = dynamic(() => import('../../src/components/Map'), { 
   ssr: false, 
@@ -49,19 +50,18 @@ export default function TrackingPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState('');
-  const [error, setError] = useState('');
   const [shipmentOrigin, setShipmentOrigin] = useState('');
   const [shipmentDestination, setShipmentDestination] = useState('');
   const [timeRemaining, setTimeRemaining] = useState('');
-  
-  // Default to [0,0] (middle of the ocean) so no default route shows
   const [originCoords, setOriginCoords] = useState<[number, number]>([0, 0]);
   const [destCoords, setDestCoords] = useState<[number, number]>([0, 0]);
-  
   const [totalDistance, setTotalDistance] = useState(0);
   const [animationDuration, setAnimationDuration] = useState(800);
   const [bearing, setBearing] = useState(0);
   const mapContainerRef = useRef<HTMLDivElement>(null);
+  
+  // NEW: State to trigger map recentering
+  const [recenterKey, setRecenterKey] = useState(0);
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -101,8 +101,10 @@ export default function TrackingPage() {
   }, [isTracking, progress, animationDuration]);
 
   const handleTrack = async () => {
-    setError('');
-    if (!trackingId.trim()) { setError('Please enter a tracking number!'); return; }
+    if (!trackingId.trim()) { 
+      toast.error('Please enter a tracking number!');
+      return; 
+    }
     
     setIsLoading(true);
     
@@ -114,7 +116,7 @@ export default function TrackingPage() {
       });
 
       if (response.status === 404) {
-        setError('Tracking ID "' + trackingId + '" not found. Please check your documents.');
+        toast.error('Tracking ID not found. Please check your documents.');
         setIsLoading(false);
         return;
       }
@@ -129,7 +131,7 @@ export default function TrackingPage() {
       ]);
       
       if (!originCoordsResult || !destCoordsResult) {
-        setError('Could not find coordinates for one or both cities. Please check the city names.');
+        toast.error('Could not find coordinates for the cities.');
         setIsLoading(false);
         return;
       }
@@ -151,23 +153,25 @@ export default function TrackingPage() {
       setProgress(0);
       setStatus('Processing...');
       setIsTracking(true);
+      toast.success('Shipment located! Tracking started.');
       
       setTimeout(() => {
         mapContainerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }, 300);
       
     } catch (err) {
-      setError('Server error. Please try again.');
+      toast.error('Server error. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleReset = () => {
-    setIsTracking(false); setProgress(0); setStatus(''); setTrackingId(''); setError('');
+    setIsTracking(false); setProgress(0); setStatus(''); setTrackingId('');
     setShipmentOrigin(''); setShipmentDestination(''); setTimeRemaining('');
-    setOriginCoords([0, 0]); setDestCoords([0, 0]); // Reset to blank map
+    setOriginCoords([0, 0]); setDestCoords([0, 0]);
     setTotalDistance(0); setAnimationDuration(800); setBearing(0);
+    setRecenterKey(0);
   };
 
   return (
@@ -182,7 +186,7 @@ export default function TrackingPage() {
 
         <div className="bg-white p-6 rounded-xl shadow-md border border-gray-100 mb-8 max-w-3xl">
           <div className="flex flex-col sm:flex-row gap-3">
-            <input type="text" value={trackingId} onChange={(e) => { setTrackingId(e.target.value); setError(''); }} placeholder="Enter any tracking ID from database" disabled={isTracking || isLoading} className="flex-1 border border-gray-300 rounded-md px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#FF8C00] focus:border-transparent disabled:bg-gray-100" />
+            <input type="text" value={trackingId} onChange={(e) => setTrackingId(e.target.value)} placeholder="Enter any tracking ID from database" disabled={isTracking || isLoading} className="flex-1 border border-gray-300 rounded-md px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#FF8C00] focus:border-transparent disabled:bg-gray-100" />
             {!isTracking ? (
               <button onClick={handleTrack} disabled={isLoading} className="bg-[#00234B] text-white px-8 py-3 rounded-md font-semibold hover:bg-[#003366] transition-colors flex items-center justify-center gap-2 whitespace-nowrap disabled:opacity-50">
                 {isLoading ? 'Locating...' : <><MapPin size={18} /> Track Parcel</>}
@@ -191,12 +195,6 @@ export default function TrackingPage() {
               <button onClick={handleReset} className="bg-gray-200 text-gray-700 px-8 py-3 rounded-md font-semibold hover:bg-gray-300 transition-colors whitespace-nowrap">Track Another</button>
             )}
           </div>
-
-          {error && (
-            <div className="mt-4 flex items-center gap-2 text-red-600 bg-red-50 p-3 rounded-lg border border-red-200">
-              <AlertCircle size={18} /> <span className="text-sm font-medium">{error}</span>
-            </div>
-          )}
 
           {isTracking && (
             <div className="mt-6 space-y-3 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -239,10 +237,20 @@ export default function TrackingPage() {
         </div>
 
         <div ref={mapContainerRef} className="relative overflow-hidden border-4 border-white rounded-2xl shadow-2xl h-[60vh] min-h-[400px]">
-          <Map isTracking={isTracking} progress={progress} originCoords={originCoords} destCoords={destCoords} origin={shipmentOrigin} destination={shipmentDestination} bearing={bearing} />
+          <Map isTracking={isTracking} progress={progress} originCoords={originCoords} destCoords={destCoords} origin={shipmentOrigin} destination={shipmentDestination} bearing={bearing} recenterKey={recenterKey} />
+          
+          {/* Map Legend with NEW Recenter Button */}
           <div className="absolute bottom-4 right-4 bg-white/95 backdrop-blur px-4 py-2 rounded-lg text-sm font-semibold text-[#00234B] shadow-lg flex items-center gap-2 border border-gray-200">
             <span className={`w-2.5 h-2.5 rounded-full ${isTracking ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></span> 
             {isTracking ? 'Live Global Tracking Active' : 'Enter ID to Track'}
+            
+            {/* NEW: Recenter Button */}
+            {isTracking && (
+              <button onClick={() => setRecenterKey(prev => prev + 1)} className="ml-2 px-3 py-1 bg-[#00234B] text-white text-xs font-bold rounded hover:bg-[#003366] transition-colors flex items-center gap-1">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="3"></circle></svg>
+                Recenter
+              </button>
+            )}
           </div>
         </div>
       </div>
