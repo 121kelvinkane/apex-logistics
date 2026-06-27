@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 import { useState, useEffect } from 'react';
 import { Settings as SettingsIcon, ArrowLeft, Save, Building2, Mail, Phone, MapPin } from 'lucide-react';
 
@@ -10,7 +10,7 @@ export default function SettingsPage() {
   useEffect(() => {
     fetch('/api/settings')
       .then(res => res.ok ? res.json() : {})
-      .then(data => {
+      .then((data: any) => {
         if (data && data.companyName) setSettings(data);
       })
       .catch(() => {});
